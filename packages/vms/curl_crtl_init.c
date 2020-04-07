@@ -1,7 +1,7 @@
 /* File: curl_crtl_init.c
  *
  * This file makes sure that the DECC Unix settings are correct for
- * the mode the the program is run in.
+ * the mode the program is run in.
  *
  * The CRTL has not been initialized at the time that these routines
  * are called, so many routines can not be called.
@@ -183,7 +183,6 @@ static void set_features(void)
     status = sys_trnlnm("GNV$UNIX_SHELL",
                         unix_shell_name, sizeof unix_shell_name -1);
     if (!$VMS_STATUS_SUCCESS(status)) {
-        unix_shell_name[0] = 0;
         use_unix_settings = 0;
     }
 

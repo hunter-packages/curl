@@ -5,7 +5,7 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2016, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 1998 - 2020, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
@@ -28,6 +28,7 @@
 #endif
 
 #ifdef WIN32
+#  include <tlhelp32.h>
 #  include "tool_cfgable.h"
 #  include "tool_libinfo.h"
 #endif
@@ -36,33 +37,6 @@
 #include "tool_doswin.h"
 
 #include "memdebug.h" /* keep this as LAST include */
-
-/*
- * Macros ALWAYS_TRUE and ALWAYS_FALSE are used to avoid compiler warnings.
- */
-
-#define ALWAYS_TRUE   (1)
-#define ALWAYS_FALSE  (0)
-
-#if defined(_MSC_VER) && !defined(__POCC__)
-#  undef ALWAYS_TRUE
-#  undef ALWAYS_FALSE
-#  if (_MSC_VER < 1500)
-#    define ALWAYS_TRUE   (0, 1)
-#    define ALWAYS_FALSE  (1, 0)
-#  else
-#    define ALWAYS_TRUE \
-__pragma(warning(push)) \
-__pragma(warning(disable:4127)) \
-(1) \
-__pragma(warning(pop))
-#    define ALWAYS_FALSE \
-__pragma(warning(push)) \
-__pragma(warning(disable:4127)) \
-(0) \
-__pragma(warning(pop))
-#  endif
-#endif
 
 #ifdef WIN32
 #  undef  PATH_MAX
@@ -78,9 +52,9 @@ __pragma(warning(pop))
 #endif
 
 #ifdef WIN32
-#  define _use_lfn(f) ALWAYS_TRUE   /* long file names always available */
+#  define _use_lfn(f) (1)   /* long file names always available */
 #elif !defined(__DJGPP__) || (__DJGPP__ < 2)  /* DJGPP 2.0 has _use_lfn() */
-#  define _use_lfn(f) ALWAYS_FALSE  /* long file names never available */
+#  define _use_lfn(f) (0)  /* long file names never available */
 #elif defined(__DJGPP__)
 #  include <fcntl.h>                /* _use_lfn(f) prototype */
 #endif
@@ -598,7 +572,6 @@ SANITIZEcode rename_if_reserved_dos_device_name(char **const sanitized,
       }
       memmove(base + 1, base, blen + 1);
       base[0] = '_';
-      ++blen;
     }
   }
 #endif
@@ -645,9 +618,9 @@ CURLcode FindWin32CACert(struct OperationConfig *config,
 
   /* Search and set cert file only if libcurl supports SSL.
    *
-   * If Schannel (WinSSL) is the selected SSL backend then these locations
-   * are ignored. We allow setting CA location for schannel only when
-   * explicitly specified by the user via CURLOPT_CAINFO / --cacert.
+   * If Schannel is the selected SSL backend then these locations are
+   * ignored. We allow setting CA location for schannel only when explicitly
+   * specified by the user via CURLOPT_CAINFO / --cacert.
    */
   if((curlinfo->features & CURL_VERSION_SSL) &&
      backend != CURLSSLBACKEND_SCHANNEL) {
@@ -668,6 +641,86 @@ CURLcode FindWin32CACert(struct OperationConfig *config,
   }
 
   return result;
+}
+
+
+/* Get a list of all loaded modules with full paths.
+ * Returns slist on success or NULL on error.
+ */
+struct curl_slist *GetLoadedModulePaths(void)
+{
+  HANDLE hnd = INVALID_HANDLE_VALUE;
+  MODULEENTRY32 mod = {0};
+  struct curl_slist *slist = NULL;
+
+  mod.dwSize = sizeof(MODULEENTRY32);
+
+  do {
+    hnd = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, 0);
+  } while(hnd == INVALID_HANDLE_VALUE && GetLastError() == ERROR_BAD_LENGTH);
+
+  if(hnd == INVALID_HANDLE_VALUE)
+    goto error;
+
+  if(!Module32First(hnd, &mod))
+    goto error;
+
+  do {
+    char *path; /* points to stack allocated buffer */
+    struct curl_slist *temp;
+
+#ifdef UNICODE
+    /* sizeof(mod.szExePath) is the max total bytes of wchars. the max total
+       bytes of multibyte chars won't be more than twice that. */
+    char buffer[sizeof(mod.szExePath) * 2];
+    if(!WideCharToMultiByte(CP_ACP, 0, mod.szExePath, -1,
+                            buffer, sizeof(buffer), NULL, NULL))
+      goto error;
+    path = buffer;
+#else
+    path = mod.szExePath;
+#endif
+    temp = curl_slist_append(slist, path);
+    if(!temp)
+      goto error;
+    slist = temp;
+  } while(Module32Next(hnd, &mod));
+
+  goto cleanup;
+
+error:
+  curl_slist_free_all(slist);
+  slist = NULL;
+cleanup:
+  if(hnd != INVALID_HANDLE_VALUE)
+    CloseHandle(hnd);
+  return slist;
+}
+
+LARGE_INTEGER Curl_freq;
+bool Curl_isVistaOrGreater;
+
+CURLcode win32_init(void)
+{
+  OSVERSIONINFOEXA osvi;
+  unsigned __int64 mask = 0;
+  unsigned char op = VER_GREATER_EQUAL;
+
+  memset(&osvi, 0, sizeof(osvi));
+  osvi.dwOSVersionInfoSize = sizeof(osvi);
+  osvi.dwMajorVersion = 6;
+  VER_SET_CONDITION(mask, VER_MAJORVERSION, op);
+  VER_SET_CONDITION(mask, VER_MINORVERSION, op);
+
+  if(VerifyVersionInfoA(&osvi, (VER_MAJORVERSION | VER_MINORVERSION), mask))
+    Curl_isVistaOrGreater = true;
+  else if(GetLastError() == ERROR_OLD_WIN_VERSION)
+    Curl_isVistaOrGreater = false;
+  else
+    return CURLE_FAILED_INIT;
+
+  QueryPerformanceFrequency(&Curl_freq);
+  return CURLE_OK;
 }
 
 #endif /* WIN32 */

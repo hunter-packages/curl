@@ -15,7 +15,7 @@
  */
 
 /*
- * Copyright (c) 2003 The OpenEvidence Project.  All rights reserved.
+ * Copyright (c) 2003 - 2019 The OpenEvidence Project.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -159,7 +159,7 @@ static char *ia5string(ASN1_IA5STRING *ia5)
   return tmp;
 }
 
-/* A conveniance routine to get an access URI. */
+/* A convenience routine to get an access URI. */
 static unsigned char *my_get_ext(X509 *cert, const int type,
                                  int extensiontype)
 {
@@ -277,7 +277,7 @@ int main(int argc, char **argv)
 
   int tabLength = 100;
   char *binaryptr;
-  char *mimetype;
+  char *mimetype = NULL;
   char *mimetypeaccept = NULL;
   char *contenttype;
   const char **pp;
@@ -294,7 +294,7 @@ int main(int argc, char **argv)
 
   binaryptr = malloc(tabLength);
 
-  p.verbose = 0;
+  memset(&p, '\0', sizeof(p));
   p.errorbio = BIO_new_fp(stderr, BIO_NOCLOSE);
 
   curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -372,7 +372,7 @@ int main(int argc, char **argv)
     args++;
   }
 
-  if(mimetype == NULL || mimetypeaccept == NULL)
+  if(mimetype == NULL || mimetypeaccept == NULL || p.p12file == NULL)
     badarg = 1;
 
   if(badarg) {
@@ -515,12 +515,20 @@ int main(int argc, char **argv)
   curl_easy_setopt(p.curl, CURLOPT_SSL_CTX_DATA, &p);
 
   {
+    char *ptr;
     int lu; int i = 0;
     while((lu = BIO_read(in, &binaryptr[i], tabLength-i)) >0) {
       i += lu;
       if(i == tabLength) {
         tabLength += 100;
-        binaryptr = realloc(binaryptr, tabLength); /* should be more careful */
+        ptr = realloc(binaryptr, tabLength); /* should be more careful */
+        if(!ptr) {
+          /* out of memory */
+          BIO_printf(p.errorbio, "out of memory (realloc returned NULL)\n");
+          goto fail;
+        }
+        binaryptr = ptr;
+        ptr = NULL;
       }
     }
     tabLength = i;
@@ -536,7 +544,7 @@ int main(int argc, char **argv)
   BIO_printf(p.errorbio, "%d %s %d\n", __LINE__, "curl_easy_perform",
              res = curl_easy_perform(p.curl));
   {
-    int result = curl_easy_getinfo(p.curl, CURLINFO_CONTENT_TYPE, &response);
+    curl_easy_getinfo(p.curl, CURLINFO_CONTENT_TYPE, &response);
     if(mimetypeaccept && p.verbose) {
       if(!strcmp(mimetypeaccept, response))
         BIO_printf(p.errorbio, "the response has a correct mimetype : %s\n",
@@ -551,7 +559,7 @@ int main(int argc, char **argv)
   /*** code d'erreur si accept mime ***, egalement code return HTTP != 200 ***/
 
 /* free the header list*/
-
+fail:
   curl_slist_free_all(headers);
 
   /* always cleanup */
