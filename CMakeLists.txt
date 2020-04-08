@@ -48,8 +48,8 @@ include(CheckCCompilerFlag)
 
 include(CMake/HunterGate.cmake)
 HunterGate(
-    URL "https://github.com/ruslo/hunter/archive/v0.22.30.tar.gz"
-    SHA1 "380a7687ea63898b59a3ee6e3d7c39b1faa1aadc"
+    URL "https://github.com/pokey909/hunter/archive/v0.23.256.tar.gz"
+    SHA1 "60c57642fa068ddaf51f9c88c39de23b170f2277"
 )
 
 project(CURL C)

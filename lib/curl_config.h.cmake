@@ -893,6 +893,16 @@
  Reference: https://cmake.org/cmake/help/latest/module/CheckTypeSize.html
 */
 
+#define SIZEOF_INT INTSIZEOF_INT
+
+/* The size of `short', as computed by sizeof. */
+#define SIZEOF_SHORT INTSIZEOF_SHRT
+
+/* The size of `long', as computed by sizeof. */
+#define SIZEOF_LONG INTSIZEOF_LONG
+
+#define SIZEOF_SIZE_T INTSIZEOF_SIZE
+
 /* The size of `int', as computed by sizeof. */
 ${SIZEOF_INT_CODE}
 
